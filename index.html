@@ -1,0 +1,226 @@
+<!doctype html>
+
+<title>So... cold...</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<style>
+</style>
+
+<h1>So coldifier</h1>
+
+<p>Make any song sound like Undertale's Snowdrake's amalgamate mother song.</p>
+<p>(hint: load the URL "mus_snowy.ogg" to listen to the original song.)</p>
+
+<label><input class="fromURL" type='radio' name="from" checked />Load audio from a URL</label>
+<div><input class="url" type="text" /></div>
+
+<label><input class="fromFile" type='radio' name="from" />Load audio from a file</label>
+<div><input class="file" type="file" /></div>
+
+<div>
+	<button class="load">Load</button>
+	<button class="play">Play</button>
+	<button class="stop">Stop</button>
+</div>
+
+<div class="info"></div>
+
+<script>
+
+	var initialPitch = 0.5;
+
+	var enableRandomPitchChange = true;
+	var minPitch = 0.3;
+	var maxPitch = 0.7;
+
+	var timeBetweenSteps = 1/30; // seconds
+	var timeUntilFirstChange = 160/30; // seconds
+	var timeMinBetweenChanges = 4/30; // seconds
+	var timeMaxBetweenChanges = 4; // seconds
+
+	var sinePitchMagnitude = 0.01;
+	var sinePhaseSpeed = 15; // radians per second
+
+	//
+
+	var $ = q => document.querySelector(q);
+
+	var audioCtx = null;
+	var audioSource = null;
+	var audioBuffer = null;
+
+	var timeoutStep = null;
+	var timeoutChange = null;
+
+	var basePitch = initialPitch;
+	var sinePitch = 0;
+	var sinePhase = 0;
+
+	var randomRange = (min, max) => Math.random() * (max - min) + min;
+
+	var startAudioCtx = () => {
+		if (!audioCtx) {
+			audioCtx = new AudioContext();
+		}
+	}
+
+	var loadFromFile = (file) => {
+
+		startAudioCtx();
+		stop();
+
+		return new Promise((resolve, reject) => {
+			var fileReader = new FileReader();
+			fileReader.onload = () => {
+				resolve(loadFromArrayBuffer(fileReader.result));
+			}
+			fileReader.onerror = () => {
+				reject();
+			}
+			fileReader.readAsArrayBuffer(file);
+		});
+		
+	}
+
+	var loadFromURL = (url) => {
+
+		startAudioCtx();
+		stop();
+
+		return fetch(url)
+		.then(response => response.arrayBuffer())
+		.then(arrayBuffer => loadFromArrayBuffer(arrayBuffer))
+
+	}
+
+	var loadFromArrayBuffer = (arrayBuffer) => {
+		return audioCtx.decodeAudioData(arrayBuffer)
+		.then(buffer => {
+			audioBuffer = buffer;
+		});
+	}
+
+	var start = () => {
+
+		audioSource = audioCtx.createBufferSource();
+		audioSource.buffer = audioBuffer; //load buffer into buffersourcenode
+		audioSource.loop = true;
+		audioSource.playbackRate.value = basePitch;
+		audioSource.connect(audioCtx.destination);
+		audioSource.start();
+
+		if (enableRandomPitchChange) {
+			timeoutChange = setTimeout(() => change(), timeUntilFirstChange * 1000);
+		}
+		timeoutStep = setTimeout(() => step(), timeBetweenSteps * 1000);
+
+	}
+
+	var stop = () => {
+		if (audioSource) {
+
+			audioSource.stop();
+			audioSource.disconnect();
+			audioSource = null;
+
+			basePitch = initialPitch;
+			sinePhase = 0;
+
+			clearTimeout(timeoutStep);
+			clearTimeout(timeoutChange);
+		}
+	}
+
+	var step = () => {
+
+		sinePhase += timeBetweenSteps * sinePhaseSpeed;
+		sinePitch = Math.sin(sinePhase) * sinePitchMagnitude;
+
+		var finalPitch = basePitch + sinePitch;
+		audioSource.playbackRate.value = finalPitch;
+
+		timeoutStep = setTimeout(() => step(), timeBetweenSteps * 1000);
+
+	}
+
+	var change = () => {
+
+		basePitch = randomRange(minPitch, maxPitch);
+
+		var nextChangeTime = randomRange(timeMinBetweenChanges, timeMaxBetweenChanges);
+		timeoutChange = setTimeout(() => change(), nextChangeTime * 1000);
+
+	}
+
+	//
+
+	$('input.url').disabled = false;
+	$('input.file').disabled = true;
+
+	$('input.fromURL').onclick = () => {
+		$('input.url').disabled = false;
+		$('input.file').disabled = true;
+	}
+
+	$('input.fromFile').onclick = () => {
+		$('input.url').disabled = true;
+		$('input.file').disabled = false;
+	}
+
+	$('button.load').disabled = false;
+	$('button.load').onclick = () => {
+
+		$('.info').textContent = `Loading...`;
+
+		$('button.play').disabled = true;
+		$('button.stop').disabled = true;
+
+		var promLoad;
+		var fileName;
+
+		if ($('input.fromFile').checked) {
+			promLoad = loadFromFile($('input.file').files[0]);
+			fileName = $('input.file').files[0].name;
+		} else if ($('input.fromURL').checked) {
+			promLoad = loadFromURL($('input.url').value);
+			fileName = $('input.url').value;
+		}
+
+		promLoad
+		.then(() => {
+			$('.info').textContent = `Loaded "`+fileName+`"`;
+
+			$('button.play').disabled = false;
+			$('button.stop').disabled = true;
+		})
+		.catch(() => {
+			$('.info').textContent = `Error loading "`+fileName+`"!`;
+		});
+
+	};
+
+	$('button.play').disabled = true;
+	$('button.play').onclick = () => {
+
+		$('.info').textContent = `Playing.`;
+
+		$('button.play').disabled = true;
+		$('button.stop').disabled = false;
+
+		start();
+
+	};
+
+	$('button.stop').disabled = true;
+	$('button.stop').onclick = () => {
+
+		$('.info').textContent = `Stopped.`;
+
+		$('button.play').disabled = false;
+		$('button.stop').disabled = true;
+
+		stop();
+
+	};
+	
+</script>
