@@ -27,6 +27,8 @@
 
 <script>
 
+	var loop = true;
+
 	var initialPitch = 0.5;
 
 	var enableRandomPitchChange = true;
@@ -104,7 +106,7 @@
 
 		audioSource = audioCtx.createBufferSource();
 		audioSource.buffer = audioBuffer; //load buffer into buffersourcenode
-		audioSource.loop = true;
+		audioSource.loop = loop;
 		audioSource.playbackRate.value = basePitch;
 		audioSource.connect(audioCtx.destination);
 		audioSource.start();
