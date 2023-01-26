@@ -3,6 +3,8 @@
 <title>So... cold...</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+<script src="audiobuffer-to-wav.js" defer></script>
+
 <style>
 html {
 	color-scheme: dark light;
@@ -24,6 +26,7 @@ html {
 	<button class="load">Load</button>
 	<button class="play">Play</button>
 	<button class="stop">Stop</button>
+	<button class="download">Download</button>
 </div>
 
 <div class="info"></div>
@@ -49,6 +52,8 @@ html {
 	//
 
 	var $ = q => document.querySelector(q);
+
+	var filename = "";
 
 	var audioCtx = null;
 	var audioSource = null;
@@ -94,7 +99,7 @@ html {
 
 		return fetch(url)
 		.then(response => response.arrayBuffer())
-		.then(arrayBuffer => loadFromArrayBuffer(arrayBuffer))
+		.then(arrayBuffer => loadFromArrayBuffer(arrayBuffer));
 
 	}
 
@@ -157,6 +162,75 @@ html {
 
 	}
 
+	var download = () => {
+		let data = [];
+		let newData = [];
+
+		for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+			data[channel] = audioBuffer.getChannelData(channel);
+			newData[channel] = new Array(data[channel].length);
+		}
+
+		let basePitch = initialPitch;
+		let currentPitch = basePitch;
+
+		let timeNextStep = timeBetweenSteps;
+		let timeNextChange = timeUntilFirstChange;
+
+		let newSample = 0;
+		let time = 0;
+
+		while (time < audioBuffer.duration) {
+			const newTime = newSample / audioBuffer.sampleRate;
+
+			if (enableRandomPitchChange) {
+				if (newTime >= timeNextChange) {
+					basePitch = randomRange(minPitch, maxPitch);
+					timeNextChange += randomRange(timeMinBetweenChanges, timeMaxBetweenChanges);
+				}
+			}
+
+			if (newTime >= timeNextStep) {
+				currentPitch = basePitch + Math.sin(newTime * sinePhaseSpeed) * sinePitchMagnitude;
+				timeNextStep += timeBetweenSteps;
+			}
+
+			const sample = time * audioBuffer.sampleRate;
+			const sampleLeft = Math.floor(sample);
+			const sampleRight = sampleLeft + 1;
+			const remainder = sample % 1;
+
+			newData.forEach((newChannelData, i) => {
+				newChannelData[newSample] = ((1-remainder) * data[i][sampleLeft]) + ((remainder) * (data[i][sampleRight] ?? 0));
+			});
+
+			newSample++;
+			time += (1 / audioBuffer.sampleRate) * currentPitch;
+		}
+
+		newData.forEach((newChannelData, i) => {
+			newChannelData.length = newSample;
+		})
+
+		const newAudioBuffer = new AudioBuffer({
+			length: newSample,
+			numberOfChannels: audioBuffer.numberOfChannels,
+			sampleRate: audioBuffer.sampleRate,
+		});
+
+		newData.forEach((newChannelData, i) => {
+			console.log(newChannelData.slice(-10));
+			newAudioBuffer.copyToChannel(Float32Array.from(newChannelData), i);
+		});
+
+		const wavBuffer = audioBufferToWav(newAudioBuffer, {float32: true});
+
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(new Blob([wavBuffer]));
+		a.download = "file.wav";
+		a.click();
+	}
+
 	//
 
 	$('input.url').disabled = false;
@@ -179,6 +253,7 @@ html {
 
 		$('button.play').disabled = true;
 		$('button.stop').disabled = true;
+		$('button.download').disabled = true;
 
 		var promLoad;
 		var fileName;
@@ -197,6 +272,7 @@ html {
 
 			$('button.play').disabled = false;
 			$('button.stop').disabled = true;
+			$('button.download').disabled = false;
 		})
 		.catch(() => {
 			$('.info').textContent = `Error loading "`+fileName+`"!`;
@@ -225,6 +301,18 @@ html {
 		$('button.stop').disabled = true;
 
 		stop();
+
+	};
+
+	$('button.download').disabled = true;
+	$('button.download').onclick = () => {
+
+		$('.info').textContent = `Generating download...`;
+
+		setTimeout(() => {
+			download();
+			$('.info').textContent = `Downloading.`;
+		}, 0);
 
 	};
 	
