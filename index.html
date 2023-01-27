@@ -17,7 +17,7 @@ html {
 <p>(hint: load the URL "mus_snowy.ogg" to listen to the original song.)</p>
 
 <label><input class="fromURL" type='radio' name="from" checked />Load audio from a URL</label>
-<div><input class="url" type="text" /></div>
+<div><input class="url" type="text" placeholder="mus_snowy.ogg" /></div>
 
 <label><input class="fromFile" type='radio' name="from" />Load audio from a file</label>
 <div><input class="file" type="file" /></div>
@@ -33,54 +33,54 @@ html {
 
 <script>
 
-	var loop = true;
+	let loop = true;
 
-	var initialPitch = 0.5;
+	let initialPitch = 0.5;
 
-	var enableRandomPitchChange = true;
-	var minPitch = 0.3;
-	var maxPitch = 0.7;
+	let enableRandomPitchChange = true;
+	let minPitch = 0.3;
+	let maxPitch = 0.7;
 
-	var timeBetweenSteps = 1/30; // seconds
-	var timeUntilFirstChange = 160/30; // seconds
-	var timeMinBetweenChanges = 4/30; // seconds
-	var timeMaxBetweenChanges = 4; // seconds
+	let timeBetweenSteps = 1/30; // seconds
+	let timeUntilFirstChange = 160/30; // seconds
+	let timeMinBetweenChanges = 4/30; // seconds
+	let timeMaxBetweenChanges = 4; // seconds
 
-	var sinePitchMagnitude = 0.01;
-	var sinePhaseSpeed = 15; // radians per second
+	let sinePitchMagnitude = 0.01;
+	let sinePhaseSpeed = 15; // radians per second
 
 	//
 
-	var $ = q => document.querySelector(q);
+	const $ = q => document.querySelector(q);
 
-	var filename = "";
+	let filename = "";
 
-	var audioCtx = null;
-	var audioSource = null;
-	var audioBuffer = null;
+	let audioCtx = null;
+	let audioSource = null;
+	let audioBuffer = null;
 
-	var timeoutStep = null;
-	var timeoutChange = null;
+	let timeoutStep = null;
+	let timeoutChange = null;
 
-	var basePitch = initialPitch;
-	var sinePitch = 0;
-	var sinePhase = 0;
+	let basePitch = initialPitch;
+	let sinePitch = 0;
+	let sinePhase = 0;
 
-	var randomRange = (min, max) => Math.random() * (max - min) + min;
+	const randomRange = (min, max) => Math.random() * (max - min) + min;
 
-	var startAudioCtx = () => {
+	const startAudioCtx = () => {
 		if (!audioCtx) {
 			audioCtx = new AudioContext();
 		}
 	}
 
-	var loadFromFile = (file) => {
+	const loadFromFile = (file) => {
 
 		startAudioCtx();
 		stop();
 
 		return new Promise((resolve, reject) => {
-			var fileReader = new FileReader();
+			let fileReader = new FileReader();
 			fileReader.onload = () => {
 				resolve(loadFromArrayBuffer(fileReader.result));
 			}
@@ -92,7 +92,7 @@ html {
 		
 	}
 
-	var loadFromURL = (url) => {
+	const loadFromURL = (url) => {
 
 		startAudioCtx();
 		stop();
@@ -103,14 +103,14 @@ html {
 
 	}
 
-	var loadFromArrayBuffer = (arrayBuffer) => {
+	const loadFromArrayBuffer = (arrayBuffer) => {
 		return audioCtx.decodeAudioData(arrayBuffer)
 		.then(buffer => {
 			audioBuffer = buffer;
 		});
 	}
 
-	var start = () => {
+	const start = () => {
 
 		audioSource = audioCtx.createBufferSource();
 		audioSource.buffer = audioBuffer; //load buffer into buffersourcenode
@@ -126,7 +126,7 @@ html {
 
 	}
 
-	var stop = () => {
+	const stop = () => {
 		if (audioSource) {
 
 			audioSource.stop();
@@ -141,94 +141,77 @@ html {
 		}
 	}
 
-	var step = () => {
+	const step = () => {
 
 		sinePhase += timeBetweenSteps * sinePhaseSpeed;
 		sinePitch = Math.sin(sinePhase) * sinePitchMagnitude;
 
-		var finalPitch = basePitch + sinePitch;
+		let finalPitch = basePitch + sinePitch;
 		audioSource.playbackRate.value = finalPitch;
 
 		timeoutStep = setTimeout(() => step(), timeBetweenSteps * 1000);
 
 	}
 
-	var change = () => {
+	const change = () => {
 
 		basePitch = randomRange(minPitch, maxPitch);
 
-		var nextChangeTime = randomRange(timeMinBetweenChanges, timeMaxBetweenChanges);
+		let nextChangeTime = randomRange(timeMinBetweenChanges, timeMaxBetweenChanges);
 		timeoutChange = setTimeout(() => change(), nextChangeTime * 1000);
 
 	}
 
-	var download = () => {
+	const download = () => {
+		const worker = new Worker("worker.js");
+
 		let data = [];
-		let newData = [];
 
 		for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-			data[channel] = audioBuffer.getChannelData(channel);
-			newData[channel] = new Array(data[channel].length);
+			data[channel] = audioBuffer.getChannelData(channel)
 		}
 
-		let basePitch = initialPitch;
-		let currentPitch = basePitch;
+		worker.postMessage({
+			data,
 
-		let timeNextStep = timeBetweenSteps;
-		let timeNextChange = timeUntilFirstChange;
+			numberOfChannels: audioBuffer.numberOfChannels,
+			duration: audioBuffer.duration,
+			sampleRate: audioBuffer.sampleRate,
 
-		let newSample = 0;
-		let time = 0;
+			initialPitch,
+			timeBetweenSteps,
+			timeUntilFirstChange,
+			enableRandomPitchChange,
+			minPitch,
+			maxPitch,
+			timeMinBetweenChanges,
+			timeMaxBetweenChanges,
+			sinePhaseSpeed,
+			sinePitchMagnitude,
+		});
 
-		while (time < audioBuffer.duration) {
-			const newTime = newSample / audioBuffer.sampleRate;
+		worker.onmessage = e => {
+			worker.terminate();
 
-			if (enableRandomPitchChange) {
-				if (newTime >= timeNextChange) {
-					basePitch = randomRange(minPitch, maxPitch);
-					timeNextChange += randomRange(timeMinBetweenChanges, timeMaxBetweenChanges);
-				}
-			}
-
-			if (newTime >= timeNextStep) {
-				currentPitch = basePitch + Math.sin(newTime * sinePhaseSpeed) * sinePitchMagnitude;
-				timeNextStep += timeBetweenSteps;
-			}
-
-			const sample = time * audioBuffer.sampleRate;
-			const sampleLeft = Math.floor(sample);
-			const sampleRight = sampleLeft + 1;
-			const remainder = sample % 1;
-
-			newData.forEach((newChannelData, i) => {
-				newChannelData[newSample] = ((1-remainder) * data[i][sampleLeft]) + ((remainder) * (data[i][sampleRight] ?? 0));
+			const newAudioBuffer = new AudioBuffer({
+				length: e.data.length,
+				numberOfChannels: audioBuffer.numberOfChannels,
+				sampleRate: audioBuffer.sampleRate,
 			});
 
-			newSample++;
-			time += (1 / audioBuffer.sampleRate) * currentPitch;
+			e.data.data.forEach((channelData, i) => {
+				newAudioBuffer.copyToChannel(channelData, i);
+			});
+
+			const wavBuffer = audioBufferToWav(newAudioBuffer, {float32: true});
+
+			const a = document.createElement("a");
+			a.href = URL.createObjectURL(new Blob([wavBuffer]));
+			a.download = "file.wav";
+			a.click();
+
+			$('.info').textContent = `Downloading.`;
 		}
-
-		newData.forEach((newChannelData, i) => {
-			newChannelData.length = newSample;
-		})
-
-		const newAudioBuffer = new AudioBuffer({
-			length: newSample,
-			numberOfChannels: audioBuffer.numberOfChannels,
-			sampleRate: audioBuffer.sampleRate,
-		});
-
-		newData.forEach((newChannelData, i) => {
-			console.log(newChannelData.slice(-10));
-			newAudioBuffer.copyToChannel(Float32Array.from(newChannelData), i);
-		});
-
-		const wavBuffer = audioBufferToWav(newAudioBuffer, {float32: true});
-
-		const a = document.createElement("a");
-		a.href = URL.createObjectURL(new Blob([wavBuffer]));
-		a.download = "file.wav";
-		a.click();
 	}
 
 	//
@@ -255,15 +238,15 @@ html {
 		$('button.stop').disabled = true;
 		$('button.download').disabled = true;
 
-		var promLoad;
-		var fileName;
+		let promLoad;
+		let fileName;
 
 		if ($('input.fromFile').checked) {
-			promLoad = loadFromFile($('input.file').files[0]);
 			fileName = $('input.file').files[0].name;
+			promLoad = loadFromFile($('input.file').files[0]);
 		} else if ($('input.fromURL').checked) {
-			promLoad = loadFromURL($('input.url').value);
-			fileName = $('input.url').value;
+			fileName = $('input.url').value || "mus_snowy.ogg";
+			promLoad = loadFromURL(fileName);
 		}
 
 		promLoad
@@ -309,10 +292,7 @@ html {
 
 		$('.info').textContent = `Generating download...`;
 
-		setTimeout(() => {
-			download();
-			$('.info').textContent = `Downloading.`;
-		}, 0);
+		setTimeout(() => download(), 0);
 
 	};
 	
